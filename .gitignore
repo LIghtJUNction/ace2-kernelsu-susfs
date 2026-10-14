@@ -1,0 +1,3 @@
+.artifacts/
+.local-check*
+__pycache__/

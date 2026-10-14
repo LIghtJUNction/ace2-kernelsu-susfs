@@ -38,7 +38,7 @@ subprocess.run(["bash", "-n", str(installer)], check=True)
 (evidence / "kernel.config").write_text(config)
 (evidence / "embedded.config").write_bytes(embedded)
 (evidence / "sources.lock.json").write_text(json.dumps(lock, indent=2) + "\n")
-receipt = {"device": "PHK110", "android": 16, "kernelsu": ksu_sha, "workflow_commit": os.environ.get("GITHUB_SHA"), "run_id": os.environ.get("GITHUB_RUN_ID"), "status": "built_and_config_verified_not_device_tested", "files": {}}
+receipt = {"device": "PHK110", "android": 16, "kernelsu": ksu_sha, "kernelsu_version_code": 30000 + int(subprocess.check_output(["git", "-C", str(platform / "KernelSU"), "rev-list", "--count", "HEAD"], text=True).strip()), "workflow_commit": os.environ.get("GITHUB_SHA"), "run_id": os.environ.get("GITHUB_RUN_ID"), "status": "built_and_config_verified_not_device_tested", "files": {}}
 for f in sorted(package.rglob("*")):
     if f.is_file(): receipt["files"][str(f.relative_to(package))] = {"bytes": f.stat().st_size, "sha256": hashlib.sha256(f.read_bytes()).hexdigest()}
 (evidence / "receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")

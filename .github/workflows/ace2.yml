@@ -543,6 +543,10 @@ jobs:
           fi
 
           test "$(git rev-parse HEAD)" = "0c0fdb960178fa12d80d6cbcfdcb6ad8be6a865d"
+          # Match KernelSU Kbuild: count full history, not a shallow fetch.
+          if [ "$(git rev-parse --is-shallow-repository)" = true ]; then
+            git fetch --unshallow origin
+          fi
           KSU_VERSION=$(expr "$(git rev-list --count HEAD)" + 30000)
           echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
           echo "ksuver=$KSU_VERSION" >> $GITHUB_OUTPUT
