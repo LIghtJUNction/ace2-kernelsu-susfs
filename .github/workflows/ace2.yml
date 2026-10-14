@@ -155,6 +155,9 @@ jobs:
           REMOVE_CODEQL: 'true'
         run: bash scripts/maximize-build-space.sh
 
+      - name: Restore checkout after build-volume mount
+        uses: actions/checkout@v4
+
       - name: Configure Git
         run: |
           git config --global user.name "${{ github.actor }}"
