@@ -1,0 +1,13 @@
+{
+  "upstream_workflow": "98e4e2abb2820256510f61b7bc13472a69e19bc7",
+  "kernelsu": "0c0fdb960178fa12d80d6cbcfdcb6ad8be6a865d",
+  "kernelsu_tag": "v3.3.1",
+  "susfs": "6c931c0d922637c27a7f35e3d1cf55fb1c7305c4",
+  "manifest": "e668dc90be498785e4e77e46bec7ce52a560d91e",
+  "anykernel3": "47f23f7ece3ef212a392ec9ea5466e5f0b55d3c7",
+  "kernel_projects": {
+    "android_kernel_common_oneplus_sm8475": "694ce6ff5393dd95e96b3203558acac64ae81780",
+    "android_kernel_oneplus_sm8475": "c84a1a097ee0e040b56492ab782573dd8c03aa7f",
+    "android_kernel_modules_and_devicetree_oneplus_sm8475": "3c9f70751bfa346b3aca2a901f79a8645bb43116"
+  }
+}

@@ -1,70 +1,21 @@
-name: Build All OnePlus Kernels
+name: Build Ace 2 - upstream KernelSU and SUSFS
+permissions:
+  contents: read
+
+concurrency:
+  group: ace2-${{ github.ref }}
+  cancel-in-progress: false
+
 on:
   workflow_dispatch:
     inputs:
       FILE:
         type: choice
-        description: "配置文件//Configuration file"
+        description: "OnePlus Ace 2 PHK110 / Android 16"
         required: true
-        default: oneplus_15
+        default: oneplus_ace2_b
         options:
-          - oneplus_nord_n30_se_5g_v
-          - oneplus_10r_v
-          - oneplus_nord_3_b
-          - oneplus_ace_v
-          - oneplus_ace_race_v
-          - oneplus_10_pro_b
-          - oneplus_10t_v
-          - oneplus_11r_b
           - oneplus_ace2_b
-          - oneplus_pad_lite_b
-          - oneplus_pad_mt6983_b
-          - oneplus_ace_2v_b
-          - oneplus_ace_pro_v
-          - oneplus_11_b
-          - oneplus_12r_b
-          - oneplus_ace2_pro_b
-          - oneplus_ace3_b
-          - oneplus_open_b
-          - oneplus_nord_ce4_b
-          - oneplus_n6_b
-          - oneplus_n6x_b
-          - oneplus_12_b
-          - oneplus_pad_go_2_b
-          - oneplus_turbo_6x_b
-          - oneplus_nord_ce4_lite_5g_b
-          - oneplus_nord_ce6
-          - oneplus_nord_ce6_lite_b
-          - oneplus_turbo_6v
-          - oneplus_nord_4_b
-          - oneplus_ace_3v_b
-          - oneplus_pad_mt6897_b
-          - oneplus_13r_b
-          - oneplus_ace3_pro_b
-          - oneplus_ace5_b
-          - oneplus_pad_pro_b
-          - oneplus_pad2_b
-          - oneplus_nord_ce5_b
-          - oneplus_nord_5_b
-          - oneplus_ace5_pro_b
-          - oneplus_13_b
-          - oneplus_13t_b
-          - oneplus_13s_b
-          - oneplus_pad_2_pro_b
-          - oneplus_pad_3_b
-          - oneplus_ace5_race_b
-          - oneplus_ace5_ultra_b
-          - oneplus_pad2_mt6991_b
-          - oneplus_ace_6
-          - oneplus_turbo_6
-          - oneplus_nord_6
-          - oneplus_ace_6t
-          - oneplus_15r
-          - oneplus_15
-          - oneplus_15t
-          - oneplus_pad_3_pro
-          - oneplus_pad_4
-          - oneplus_ace6_ultra
       SUSFS_CI:
         type: choice
         description: "SUSFS模块下载调用方向//SUSFS module branch"
@@ -181,7 +132,8 @@ on:
 jobs:
   build:
     name: ${{ github.event.inputs.FAST_BUILD == 'true' && ' [FAST]' || '' }}${{ contains(github.event.inputs.FILE, '_aosp') && ' [AOSP]' || '' }}${{ github.event.inputs.KPM == 'KPM' && ' [KPM]' || github.event.inputs.KPM == 'KPN' && ' [KPN]' || '' }}${{ github.event.inputs.LSM_BBG == 'true' && ' [BBG]' || '' }}${{ github.event.inputs.SCHED_HMBIRD == 'true' && ' [HMBIRD]' || '' }}${{ github.event.inputs.DROID_SPACES == 'true' && ' [DS]' || '' }}${{ startsWith(github.event.inputs.ZRAM, '1/') && ' [ZRAM]' || '' }}${{ github.event.inputs.RE_KERNEL == 'true' && ' [REKER]' || '' }}${{ github.event.inputs.LZ4_UPDATE == 'true' && ' [LZ4UPD]' || '' }}For ${{ github.event.inputs.FILE }} ${{ github.event.inputs.SUFFIX }}
-    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    runs-on: ubuntu-24.04
     env:
       CCACHE_COMPILERCHECK: "none"
       CCACHE_NOHASHDIR: "true"
@@ -190,7 +142,7 @@ jobs:
       CCACHE_MAXSIZE: 5G
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
 
       - name: Maximize Build Space
         if: ${{ github.event.inputs.SPACE_NOCLEAN == 'false' }}
@@ -205,120 +157,33 @@ jobs:
 
       - name: Configure Git
         run: |
-          git config --global user.name "Numbersf"
-          git config --global user.email "263623064@qq.com"
+          git config --global user.name "${{ github.actor }}"
+          git config --global user.email "${{ github.actor }}@users.noreply.github.com"
           mkdir kernel_workspace && cd kernel_workspace
-          git clone https://github.com/Numbersf/Action-Build.git -b KernelSU
+          mkdir Action-Build
+          git -C "$GITHUB_WORKSPACE" archive HEAD | tar -x -C Action-Build
 
       - name: Extract Manifest Info
         id: extract_info
-        env:
-          FILE: ${{ github.event.inputs.FILE }}
         run: |
-          set -e
-          cd "$GITHUB_WORKSPACE"
-          if [[ "$FILE" =~ ^(.+)_([a-zA-Z])$ ]]; then
-            FILE_CONF="${BASH_REMATCH[1]}"
-          else
-            FILE_CONF="$FILE"
-          fi
-          FILE_BASE=$(echo "$FILE_CONF" | sed -E 's/_bak//g; /_aosp/{s/_aosp//g;s/$/(AOSP)/;}; s/_([a-zA-Z0-9])/\U\1/g; s/^oneplus/OnePlus/; s/^realme/RealME/; s/^oppo/OPPO/')
-          mkdir -p ".repo/manifests_fallback"
-          XML_PATH=".repo/manifests_fallback/${FILE}.xml"
-          README_PATH=".repo/manifests_fallback/README.md"
-          echo "处理 FILE=$FILE, CONF=$FILE_CONF, BASE=$FILE_BASE"
-          echo "FILE_CONF=$FILE_CONF" >> $GITHUB_ENV
-          echo "FILE_BASE=$FILE_BASE" >> $GITHUB_ENV
-
-          # 动态调用源码清单仓库，仓库优先级：1️⃣ OnePlusOSS → 2️⃣ Dynamic → 3️⃣ Appendix
-          DYNAMIC_REPO_INPUT="${{ github.event.inputs.DYNAMIC_REPO }}"
-          declare -A REPOS
-          REPOS["OnePlusOSS"]="OnePlusOSS|kernel_manifest"
-          REPOS["Dynamic"]="${DYNAMIC_REPO_INPUT}|kernel_manifest"
-          REPOS["Appendix"]="Numbersf|Kernel_Manifest_Appendix"
-
-          FOUND_REPO=""
-          FOUND_BRANCH=""
-
-          check_repo() {
-            local ENTRY=$1
-            local OWNER=${ENTRY%%|*}
-            local REPO_NAME=${ENTRY##*|}
-
-            echo "🌐 尝试拉取 ${OWNER}/${REPO_NAME} 分支列表..."
-            BRANCHES=$(git ls-remote --heads https://github.com/${OWNER}/${REPO_NAME}.git | sed 's|.*refs/heads/||')
-
-            if [[ -z "$BRANCHES" ]]; then
-              echo "⚠️ ${OWNER}/${REPO_NAME} 分支列表获取失败，请尝试重新运行工作流。"
-              return 1
-            fi
-            for BRANCH in $BRANCHES; do
-              XML_URL="https://raw.githubusercontent.com/${OWNER}/${REPO_NAME}/${BRANCH}/${FILE}.xml"
-              README_URL="https://raw.githubusercontent.com/${OWNER}/${REPO_NAME}/${BRANCH}/README.md"
-
-              if curl -sf --head "$XML_URL" >/dev/null; then
-                echo "✅ 在 ${OWNER}/${REPO_NAME} 找到 ${FILE}.xml (分支: ${BRANCH})"
-                curl -s -o "$XML_PATH" "$XML_URL"
-                curl -s -o "$README_PATH" "$README_URL" || true
-
-                FOUND_REPO="$OWNER"
-                FOUND_REPO_NAME="$REPO_NAME"
-                FOUND_BRANCH="$BRANCH"
-
-                return 0
-              fi
-            done
-            return 1
-          }
-          if ! check_repo "${REPOS["OnePlusOSS"]}"; then
-            if ! check_repo "${REPOS["Dynamic"]}"; then
-              check_repo "${REPOS["Appendix"]}"
-            fi
-          fi
-          if [[ -z "$FOUND_REPO" || ! -s "$XML_PATH" ]]; then
-            echo "❌ 无法在任何仓库中找到 ${FILE}.xml"
-            exit 8
-          fi
-          echo "MANIFEST_REPO=$FOUND_REPO" >> "$GITHUB_ENV"
-          echo "MANIFEST_REPO_NAME=$FOUND_REPO_NAME" >> "$GITHUB_ENV"
-          echo "MANIFEST_BRANCH=$FOUND_BRANCH" >> "$GITHUB_ENV"
-
-          # 解析 revision 字符串
-          REVISION=$(grep -oP '<project[^>]+revision="\K[^"]+' "$XML_PATH" | head -n1 || true)
-          echo "解析 FILE 获取 CPU 和 ANDROID_VERSION..."
-          # 提取 CPU
-          CPU=$(echo "$REVISION" | sed -E 's#^(oneplus|realme|oppo)/([^_]+).*#\2#')
-          # 提取 ANDROID_VERSION
-          ANDROID_VERSION=$(echo "$REVISION" | grep -oP '\d+\.\d+(\.\d+)?')
-          if [[ -n "$CPU" && -n "$ANDROID_VERSION" ]]; then
-            echo "✅ CPU=$CPU, ANDROID_VERSION=$ANDROID_VERSION"
-            echo "CPU=$CPU" >> $GITHUB_ENV
-            echo "ANDROID_VERSION=$ANDROID_VERSION" >> $GITHUB_ENV
-            # 获取短位 Android 版本号
-            echo "ANDROID_SHORT_VERSION=${ANDROID_VERSION%%.*}" >> $GITHUB_ENV
-          else
-            echo "❌ 无法从 revision 中提取 CPU 或 ANDROID_VERSION"
-            exit 1
-          fi
-
-          echo "解析 README.md 获取 CPUD 和 BUILD_METHOD..."
-          if [[ -s "$README_PATH" ]]; then
-            BUILD_LINE=$(grep -m1 'oplus_build_kernel.sh' "$README_PATH" || true)
-            if [[ -n "$BUILD_LINE" ]]; then
-              CPUD=$(echo "$BUILD_LINE" | awk '{print $(NF-1)}')
-              BUILD_METHOD=$(echo "$BUILD_LINE" | awk '{print $NF}')
-              echo "✅ CPUD=$CPUD, BUILD_METHOD=$BUILD_METHOD"
-              echo "CPUD=$CPUD" >> $GITHUB_ENV
-              echo "BUILD_METHOD=$BUILD_METHOD" >> $GITHUB_ENV
-            else
-              echo "❌ README.md 中未找到构建命令"
-            fi
-          else
-            echo "❌ README.md 下载失败或为空"
-          fi
-
-          # 传递组合信息
-          echo "value=${FILE_BASE}_Android${ANDROID_VERSION}" >> "$GITHUB_OUTPUT"
+          python3 scripts/validate_ace2.py
+          mkdir -p .repo/manifests_fallback
+          cp manifests/oneplus_ace2_b.xml .repo/manifests_fallback/
+          cp manifests/README.md .repo/manifests_fallback/README.md
+          cat >> "$GITHUB_ENV" <<'ENV'
+          FILE_CONF=oneplus_ace2
+          FILE_BASE=OnePlusAce2
+          CPU=sm8475
+          ANDROID_VERSION=16.0.0
+          ANDROID_SHORT_VERSION=16
+          CPUD=waipio
+          BUILD_METHOD=gki
+          MANIFEST_REPO=OnePlusOSS
+          MANIFEST_REPO_NAME=kernel_manifest
+          MANIFEST_BRANCH=oneplus/sm8475
+          MANIFEST_REV=e668dc90be498785e4e77e46bec7ce52a560d91e
+          ENV
+          echo "value=OnePlusAce2_Android16.0.0" >> "$GITHUB_OUTPUT"
 
       - name: Debug Show Selected Inputs
         env:
@@ -389,14 +254,14 @@ jobs:
 
       - name: Restore APT Cache
         id: apt-cache
-        uses: actions/cache@v5
+        uses: actions/cache@v4
         with:
           path: ~/.apt-pkg-cache
           key: apt-cache-${{ runner.os }}-${{ github.ref_name }}-v6
 
       - name: Install Dependencies
         run: |
-          export APT_PACKAGES="python3 git curl libelf-dev build-essential flex bison libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils rsync unzip gawk dos2unix kmod libdw-dev elfutils dwarves"
+          export APT_PACKAGES="ccache python3 git curl libelf-dev build-essential flex bison libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils rsync unzip gawk dos2unix kmod libdw-dev elfutils dwarves"
           bash "$GITHUB_WORKSPACE/kernel_workspace/Action-Build/scripts/cache_apt_pkgs.sh" ~/.apt-pkg-cache
 
       - name: Setup Kotlin
@@ -406,15 +271,10 @@ jobs:
           unzip -q kotlinc.zip -d "$HOME"
           echo "$HOME/kotlinc/bin" >> "$GITHUB_PATH"
 
-      - name: Setup Ccache-ECS
-        run: |
-         LIB_DIR="${GITHUB_WORKSPACE}/kernel_workspace/Action-Build/lib"
-         sudo cp -f "$LIB_DIR/ccache" /usr/bin/ccache && sudo chmod +x /usr/bin/ccache
-
       - name: Restore Ccache
         if: ${{ github.event.inputs.BUILD_NOCACHE == 'false' }}
         id: restore-ccache
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v4
         with:
           path: ${{ env.CCACHE_DIR }}
           key: ccache-${{ runner.os }}-${{ github.ref_name }}-${{ github.event.inputs.FILE }}-${{ env.BUILD_METHOD }}-${{ github.event.inputs.FAST_BUILD == 'true' && 'alpha' || 'beta' }}-17.0
@@ -422,7 +282,7 @@ jobs:
       - name: Restore ThinLTO Cache
         if: ${{ github.event.inputs.BUILD_NOCACHE == 'false' && github.event.inputs.FAST_BUILD == 'true' }}
         id: restore-thinlto
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v4
         with:
           path: ${{ github.workspace }}/kernel_workspace/.thinlto-cache
           key: thinlto-${{ runner.os }}-${{ github.ref_name }}-${{ github.event.inputs.FILE }}-17.0
@@ -462,9 +322,12 @@ jobs:
           BASE_URL="https://github.com/${MANIFEST_REPO}/${MANIFEST_REPO_NAME}.git"
 
           echo "使用$MANIFEST_REPO/$MANIFEST_REPO_NAME($MANIFEST_BRANCH)初始化仓库..."
-          repo init -u "$BASE_URL" -b "$MANIFEST_BRANCH" -m "${FILE}.xml" --depth=1 --no-clone-bundle --no-tags
+          repo init -u "$BASE_URL" -b "$MANIFEST_REV" -m "${FILE}.xml" --depth=1 --no-clone-bundle --no-tags
           sed -i -e '/prebuilts\/asuite"/{/ks-kernel\.lnx\.5\.0\.r3-rel/d}' -e '/tools\/tradefederation\/prebuilts"/{/ks-kernel\.lnx\.5\.0\.r3-rel/d}' ".repo/manifests/${FILE}.xml"
+          cp "$GITHUB_WORKSPACE/manifests/oneplus_ace2_b.xml" ".repo/manifests/${FILE}.xml"
           repo sync -c -j$(nproc) --no-clone-bundle --no-tags --force-sync
+
+          repo manifest -r -o "$GITHUB_WORKSPACE/source-manifest.xml"
 
           KERNEL_REPOS=""
           KERNEL_REPOS_PATH=$(find . -type f -name "build.config.msm.common" | head -n 1)
@@ -668,7 +531,7 @@ jobs:
           echo "KSU_BUILTIN_BRANCH=$KSU_BUILTIN_BRANCH" >> $GITHUB_ENV
           [[ -n "$MANUAL_HASH" ]] && echo "手动指定 hash: $MANUAL_HASH" || echo "手动指定 hash: 未启用"
 
-          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/refs/heads/${KSU_MANAGER_BRANCH}/kernel/setup.sh" | bash -s "$KSU_BUILTIN_BRANCH"
+          curl --fail --location --silent --show-error "https://raw.githubusercontent.com/tiann/KernelSU/0c0fdb960178fa12d80d6cbcfdcb6ad8be6a865d/kernel/setup.sh" | bash -s "$KSU_BUILTIN_BRANCH"
           cd ./KernelSU
 
           if [[ -n "$MANUAL_HASH" ]]; then
@@ -676,7 +539,8 @@ jobs:
             git checkout "$MANUAL_HASH"
           fi
 
-          KSU_VERSION=$(expr $(curl -sI "https://api.github.com/repos/tiann/KernelSU/commits?sha=${KSU_MANAGER_BRANCH}&per_page=1" | grep -i "link:" | sed -n 's/.*page=\([0-9]*\)>; rel="last".*/\1/p') "+" 30000)
+          test "$(git rev-parse HEAD)" = "0c0fdb960178fa12d80d6cbcfdcb6ad8be6a865d"
+          KSU_VERSION=$(expr "$(git rev-list --count HEAD)" + 30000)
           echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
           echo "ksuver=$KSU_VERSION" >> $GITHUB_OUTPUT
           sed -i "s/DKSU_VERSION=16/DKSU_VERSION=${KSU_VERSION}/" kernel/Kbuild
@@ -997,12 +861,14 @@ jobs:
 
           # KernelSU配置
           set_config "CONFIG_KSU=y"
+          set_config "CONFIG_IKCONFIG=y"
+          set_config "CONFIG_IKCONFIG_PROC=y"
 
           # KPM配置
-          if [ "${{ github.event.inputs.KPM }}" = "KPM" ] || [ "${{ github.event.inputs.KPM }}" = "N/A" ]; then
+          if [ "${{ github.event.inputs.KPM }}" = "KPM" ]; then
             set_config "CONFIG_KPM=y"
           fi
-          if [ "${{ github.event.inputs.KPM }}" = "KPN" ]; then
+          if [ "${{ github.event.inputs.KPM }}" != "KPM" ]; then
             set_config "CONFIG_KPM=n"
           fi
 
@@ -1320,7 +1186,7 @@ jobs:
           FPMAP="-ffile-prefix-map=$ROOT_REAL_PATH=."
 
           # KCFLAGS
-          KCFLAGS="$MAP $FPMAP -no-canonical-prefixes -O2 -pipe -Wno-error -fno-stack-protector -D__ANDROID_COMMON_KERNEL__"
+          KCFLAGS="$MAP $FPMAP -no-canonical-prefixes -O2 -pipe -Wno-error -D__ANDROID_COMMON_KERNEL__"
           KCPPFLAGS="$MPMAP"
 
           MAKE_ARGS=(
@@ -1380,6 +1246,8 @@ jobs:
       - name: Make AnyKernel3
         run: |
           git clone https://github.com/Numbersf/AnyKernel3 --depth=1
+          git -C AnyKernel3 fetch origin 47f23f7ece3ef212a392ec9ea5466e5f0b55d3c7 --depth=1
+          git -C AnyKernel3 checkout 47f23f7ece3ef212a392ec9ea5466e5f0b55d3c7
           rm -rf ./AnyKernel3/.git
           mkdir -p kernel_workspace/kernel_platform/out/Final-Image-Find/
           image_path=""
@@ -1452,39 +1320,26 @@ jobs:
           wget -O ksu_module_susfs_1.5.2+_Release.zip https://github.com/sidex15/ksu_module_susfs/releases/latest/download/ksu_module_susfs_1.5.2+.zip
           cp ksu_module_susfs_1.5.2+_Release.zip ./AnyKernel3/
 
-      - name: Download Latest KernelSU APK from CI
-        continue-on-error: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          MANAGER_ARTIFACT=manager
-
-          echo "Using branch: $KSU_MANAGER_BRANCH"
-          echo "Downloading artifact: $MANAGER_ARTIFACT"
-
-          run_id=$(gh api "repos/tiann/KernelSU/actions/workflows/build-manager.yml/runs?branch=$KSU_MANAGER_BRANCH&status=success&event=push&per_page=1" --jq '.workflow_runs[0].id' || echo "")
-
-          if [[ -z "$run_id" ]]; then
-            echo "No successful workflow run found on branch $KSU_MANAGER_BRANCH. Skipping download."
-            exit 0
-          fi
-          artifact_url=$(gh api "repos/tiann/KernelSU/actions/runs/$run_id/artifacts" | jq -r ".artifacts[] | select(.name == \"$MANAGER_ARTIFACT\") | .archive_download_url" | head -n1)
-
-          if [[ -z "$artifact_url" ]]; then
-            echo "No artifact '$MANAGER_ARTIFACT' found in run $run_id. Skipping download."
-            exit 0
-          fi
-          echo "Downloading from: $artifact_url"
-          curl -fL -H "Authorization: token $GITHUB_TOKEN" -o "${MANAGER_ARTIFACT}.zip" "$artifact_url"
-          unzip -j "${MANAGER_ARTIFACT}.zip" "*.apk" -d ./AnyKernel3/
-
       - name: Set zip Suffix
         id: suffix
         run: |
           echo "value=${{ env.ZRAM_ALGO_U && format('_{0}', env.ZRAM_ALGO_U) || '' }}${{ github.event.inputs.KPM == 'KPM' && '_KPM' || github.event.inputs.KPM == 'KPN' && '_KPN' || '' }}${{ github.event.inputs.LSM_BBG == 'true' && '_BBG' || '' }}_ILH${{ github.event.inputs.SCHED_HMBIRD== 'true' && '_HMBIRD' || '' }}${{ github.event.inputs.DROID_SPACES== 'true' && '_DS' || '' }}${{ github.event.inputs.RE_KERNEL == 'true' && '_REKER' || '' }}${{ github.event.inputs.LZ4_UPDATE == 'true' && '_LZ4UPD' || '' }}" >> $GITHUB_OUTPUT
 
+      - name: Verify Ace 2 build and record provenance
+        run: |
+          python3 scripts/verify_ace2_build.py
+
+      - name: Upload build evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: ace2-build-evidence-${{ github.run_id }}
+          path: |
+            build-evidence/
+            source-manifest.xml
+            .github/workflows/ace2.yml
+
       - name: Upload AnyKernel3
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: AnyKernel3_KernelSU_${{ env.KSUVER }}_${{ steps.extract_info.outputs.value }}(${{ env.CKERNEL_VERSION }})${{ steps.suffix.outputs.value }}
           path: ./AnyKernel3/*
@@ -1544,7 +1399,7 @@ jobs:
 
       - name: Upload ZRAM Module
         if: startsWith(github.event.inputs.ZRAM, '1/') && steps.zram_find.outputs.upload != 'false'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: ZRAM-Module_${{ env.KERNEL_VERSION }}_${{ steps.extract_info.outputs.value }}
           path: ZRAM-Module/*
@@ -1574,14 +1429,14 @@ jobs:
 
       - name: Save Ccache
         if: ${{ github.event.inputs.BUILD_NOCACHE == 'false' && steps.cache_size_check.outputs.ccache_save == 'true' && steps.restore-ccache.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@v5
+        uses: actions/cache/save@v4
         with:
           path: ${{ env.CCACHE_DIR }}
           key: ccache-${{ runner.os }}-${{ github.ref_name }}-${{ github.event.inputs.FILE }}-${{ env.BUILD_METHOD }}-${{ github.event.inputs.FAST_BUILD == 'true' && 'alpha' || 'beta' }}-17.0
 
       - name: Save ThinLTO Cache
         if: ${{ github.event.inputs.BUILD_NOCACHE == 'false' && github.event.inputs.FAST_BUILD == 'true' && steps.cache_size_check.outputs.thinlto_save == 'true' && steps.restore-thinlto.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@v5
+        uses: actions/cache/save@v4
         with:
           path: ${{ github.workspace }}/kernel_workspace/.thinlto-cache
           key: thinlto-${{ runner.os }}-${{ github.ref_name }}-${{ github.event.inputs.FILE }}-17.0
